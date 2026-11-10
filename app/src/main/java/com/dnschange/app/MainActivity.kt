@@ -65,7 +65,7 @@ class MainActivity : Activity() {
 
     data class Resolver(val name: String, val first: String, val second: String, val note: String = "")
 
-    // Only China, the United States, and Iran have dedicated country windows.
+    // China, the United States, Iran, and France have dedicated country windows.
     private val countries = linkedMapOf(
         "🇨🇳 چین" to listOf(
             Resolver("Alibaba AliDNS", "223.5.5.5", "223.6.6.6", "ارائه‌دهنده چینی؛ آدرس‌های رسمی عمومی"),
@@ -77,7 +77,11 @@ class MainActivity : Activity() {
             Resolver("OpenDNS", "208.67.222.222", "208.67.220.220", "Cisco OpenDNS"),
             Resolver("Quad9", "9.9.9.9", "149.112.112.112", "شبکه جهانی")
         ),
-        "🇮🇷 ایران" to emptyList()
+        "🇮🇷 ایران" to emptyList(),
+        "🇫🇷 فرانسه" to listOf(
+            Resolver("FDN ns0", "80.67.169.12", "80.67.169.40", "ارائه‌دهنده فرانسوی"),
+            Resolver("Aquilenet", "185.233.100.100", "185.233.100.101", "ارائه‌دهنده فرانسوی")
+        )
     )
 
     // Retain the previous non-window country seeds in the global search catalog.
@@ -87,21 +91,18 @@ class MainActivity : Activity() {
             Resolver("CIRA Canadian Shield Protected", "149.112.121.20", "149.112.122.20", "مسدودسازی بدافزار و فیشینگ"),
             Resolver("CIRA Canadian Shield Family", "149.112.121.30", "149.112.122.30", "فیلتر خانوادگی")
         ),
-        "🇫🇷 فرانسه" to listOf(
-            Resolver("FDN ns0", "80.67.169.12", "80.67.169.40", "ارائه‌دهنده فرانسوی"),
-            Resolver("Aquilenet", "185.233.100.100", "185.233.100.101", "ارائه‌دهنده فرانسوی")
-        ),
         "🇬🇧 انگلیس" to listOf(
             Resolver("OpenDNS", "208.67.222.222", "208.67.220.220", "شبکه جهانی"),
             Resolver("Google Public DNS", "8.8.8.8", "8.8.4.4", "شبکه Anycast جهانی")
         )
     )
 
-    // This map controls the three dedicated windows and their country-specific feeds.
+    // This map controls the four dedicated windows and their country-specific feeds.
     private val countryCodes = linkedMapOf(
         "🇨🇳 چین" to "CN",
         "🇺🇸 آمریکا" to "US",
-        "🇮🇷 ایران" to "IR"
+        "🇮🇷 ایران" to "IR",
+        "🇫🇷 فرانسه" to "FR"
     )
 
     // Curated IPv6 seeds supplement the independently downloaded online resolver lists.
@@ -352,6 +353,12 @@ class MainActivity : Activity() {
         val tabs = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setBackgroundColor(0xFFE3EAF3.toInt())
+            showDividers = LinearLayout.SHOW_DIVIDER_MIDDLE
+            dividerPadding = dp(5)
+            dividerDrawable = android.graphics.drawable.GradientDrawable().apply {
+                setColor(0xFF000000.toInt())
+                setSize(dp(1), dp(24))
+            }
         }
         page.addView(tabs, LinearLayout.LayoutParams(-1, dp(34)))
         tabContent = FrameLayout(this)
@@ -418,7 +425,7 @@ class MainActivity : Activity() {
 
     private fun buildCountriesTab(content: LinearLayout) {
         content.addView(TextView(this).apply {
-            text = "کشورها: چین، آمریکا و ایران  •  لمس DNS برای انتخاب در کادر بالایی  •  Sort برای مرتب‌سازی"
+            text = "کشورها: چین، آمریکا، ایران و فرانسه  •  لمس DNS برای انتخاب در کادر بالایی  •  Sort برای مرتب‌سازی"
             textSize = 9f
             gravity = Gravity.CENTER
             setTextColor(0xFF526176.toInt())
@@ -434,7 +441,7 @@ class MainActivity : Activity() {
         if (!::countryGridContainer.isInitialized) return
         countryGridContainer.removeAllViews()
         val cards = mutableListOf<View>()
-        // Only the three configured countries are rendered as dedicated windows.
+        // Render all four configured countries as dedicated windows; retain three columns so card widths and DNS number sizes do not shrink.
         countries.keys.forEach { country ->
             val curated = countries[country].orEmpty()
             val onlineAddresses = discoveredCountryDns[country].orEmpty().toList()
@@ -568,7 +575,7 @@ class MainActivity : Activity() {
             )
             val pool = Executors.newFixedThreadPool(18)
             try {
-                // PRIORITY: fetch the three visible country windows first (China, USA, Iran).
+                // PRIORITY: fetch all four visible country windows (China, USA, Iran, France).
                 // Publish these results immediately so the user can select DNS without waiting
                 // for the slower global catalog and IPv6 feeds.
                 // Supplement the countries already shown in Persian with independent feeds.
@@ -609,7 +616,7 @@ class MainActivity : Activity() {
                     }
                     saveCountryResearch()
                     if (::countryGridContainer.isInitialized) renderCountryGrid()
-                    toast("فهرست DNS چین، آمریکا و ایران در اولویت دریافت شد؛ ادامه جست‌وجوی عمومی در پس‌زمینه انجام می‌شود.")
+                    toast("فهرست DNS چین، آمریکا، ایران و فرانسه در اولویت دریافت شد؛ ادامه جست‌وجوی عمومی در پس‌زمینه انجام می‌شود.")
                 }
 
                 // The metadata JSON is essential: unlike a plain global IP list, it preserves
@@ -647,7 +654,7 @@ class MainActivity : Activity() {
 
             runOnUiThread {
                 // Keep metadata for every country in the searchable catalog, without creating
-                // additional country windows. Only CN, US, and IR exist in countryCodes.
+                // additional country windows. CN, US, IR, and FR have dedicated windows.
                 countryResults.forEach { (code, addresses) ->
                     val label = countryCodes.entries.firstOrNull { it.value.equals(code, true) }?.key
                         ?: countryNamesByCode[code] ?: code
@@ -675,7 +682,7 @@ class MainActivity : Activity() {
                 if (countryTotal == 0 && v4.isEmpty() && v6.isEmpty()) {
                     toast("دریافت آنلاین ممکن نشد؛ اینترنت یا دسترسی به منابع DNS را بررسی کنید.")
                 } else {
-                    toast("پژوهش پایان یافت: $countryTotal DNS یکتای کشوری؛ پنجره‌های مستقل: چین، آمریکا و ایران؛ سایر کشورها در جست‌وجوی سراسری.")
+                    toast("پژوهش پایان یافت: $countryTotal DNS یکتای کشوری؛ پنجره‌های مستقل: چین، آمریکا، ایران و فرانسه؛ سایر کشورها در جست‌وجوی سراسری.")
                 }
             }
         }.apply { name = "DNStow-CountryDNS-Research"; isDaemon = true; start() }
@@ -1482,8 +1489,8 @@ class MainActivity : Activity() {
 ۲) روشن و خاموش کردن DNS
 پس از انتخاب دو آدرس، دکمه «روشن کردن DNS» را بزنید و درخواست اتصال VPN اندروید را تأیید کنید. برای توقف، همان دکمه را دوباره بزنید. این برنامه برای راه‌اندازی سرویس به مجوز VPN محلی اندروید نیاز دارد و به روت احتیاج ندارد.
 
-۳) پنجره کشورهای چین، آمریکا و ایران
-در زبانه «کشورها» سه پنجره کشور کنار هم نمایش داده می‌شوند. هر پنجره فهرست مستقل خود را دارد و داخل همان پنجره می‌توانید به‌صورت جداگانه اسکرول کنید. لمس هر آدرس آن را در DNS 1 یا DNS 2 انتخاب‌شده قرار می‌دهد. برچسب کشور کنار آدرس‌ها، کشور فهرست یا منبع ثبت‌شده را نشان می‌دهد؛ بعضی DNSها Anycast و جهانی هستند و الزاماً فقط در همان کشور میزبانی نمی‌شوند.
+۳) پنجره کشورهای چین، آمریکا، ایران و فرانسه
+در زبانه «کشورها» چهار پنجره کشور در سه ستون نمایش داده می‌شوند؛ پنجره چهارم در ردیف بعدی قرار می‌گیرد. هر پنجره فهرست مستقل خود را دارد و داخل همان پنجره می‌توانید به‌صورت جداگانه اسکرول کنید. لمس هر آدرس آن را در DNS 1 یا DNS 2 انتخاب‌شده قرار می‌دهد. برچسب کشور کنار آدرس‌ها، کشور فهرست یا منبع ثبت‌شده را نشان می‌دهد؛ بعضی DNSها Anycast و جهانی هستند و الزاماً فقط در همان کشور میزبانی نمی‌شوند.
 
 ۴) Research
 دکمه Research فهرست‌های DNS عمومی و کشوری را دوباره از منابع آنلاین بررسی و به‌روزرسانی می‌کند. دریافت نتایج به اینترنت و در دسترس بودن منبع بستگی دارد. تعداد نتایج نمایش‌داده‌شده ممکن است با تعداد آدرس‌های پاسخ‌گو متفاوت باشد؛ هر DNS را روی شبکه خود آزمایش کنید.
