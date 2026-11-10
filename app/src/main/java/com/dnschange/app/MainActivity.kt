@@ -37,6 +37,10 @@ class MainActivity : Activity() {
     private val discoveredCountryDns = linkedMapOf<String, LinkedHashSet<String>>()
     private val responsiveIpv4 = linkedSetOf<String>()
     private val responsiveIpv6 = linkedSetOf<String>()
+    // Measured UDP/53 round-trip time in milliseconds; lower is stronger/faster on this network.
+    private val dnsPingLatencyMs = linkedMapOf<String, Long>()
+    private val countryBestDns = linkedMapOf<String, String>()
+    @Volatile private var countryPowerLoading = false
     @Volatile private var discoveryLoading = false
     @Volatile private var probingIpv4 = false
     @Volatile private var probingIpv6 = false
@@ -284,7 +288,23 @@ class MainActivity : Activity() {
                 toast(if (checked) "IPv6 در سرویس DNS فعال می‌شود." else "IPv6 غیرفعال شد.")
             }
         }
-        activationRow.addView(ipv6Toggle, LinearLayout.LayoutParams(0, dp(48), 1.55f))
+        val ipv6AndPowers = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        ipv6AndPowers.addView(ipv6Toggle, LinearLayout.LayoutParams(0, dp(48), 1.35f))
+        val powersButton = Button(this).apply {
+            text = "Powers"
+            textSize = 11f
+            isAllCaps = false
+            minWidth = 0
+            minimumWidth = 0
+            minHeight = dp(40)
+            setPadding(dp(2), 0, dp(2), 0)
+            setOnClickListener { showCountryPowersDialog() }
+        }
+        ipv6AndPowers.addView(powersButton, LinearLayout.LayoutParams(0, dp(42), 0.85f).apply { marginStart = dp(2) })
+        activationRow.addView(ipv6AndPowers, LinearLayout.LayoutParams(0, dp(48), 1.75f))
         dnsCard.addView(activationRow, LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(2) })
 
         dns1.setOnClickListener { selectTarget(1) }
@@ -457,7 +477,7 @@ class MainActivity : Activity() {
             val waiting = if (count == 0) "  ┆  در انتظار" else ""
             val threshold = if (count >= 100) "  ┆  ✓۱۰۰+" else if (count > 0) "  ┆  ${100 - count} تا ۱۰۰" else ""
             cards.add(resolverListCard("$country [$countryCode]  ┆  $count DNS$threshold$waiting", curated + onlineResolvers,
-                countryWindowHeight(), dividerBeforeIndex = curated.size.takeIf { onlineResolvers.isNotEmpty() }))
+                countryWindowHeight(), dividerBeforeIndex = curated.size.takeIf { onlineResolvers.isNotEmpty() }, countryKey = country))
         }
         if (importedResolvers.isNotEmpty()) cards.add(resolverListCard("فهرست DNSهای واردشده", importedResolvers, countryWindowHeight()))
         addThreeColumnGrid(countryGridContainer, cards)
@@ -562,6 +582,9 @@ class MainActivity : Activity() {
         if (::ipv6Status.isInitialized) ipv6Status.text = "در حال جست‌وجوی آنلاین IPv6…"
         if (::countryGridContainer.isInitialized) renderCountryGrid()
 
+        val countryBatchLimits = countryCodes.keys.associate { country ->
+            country to ((discoveredCountryDns[country]?.size ?: 0) + 700)
+        }
         Thread {
             val v4 = linkedSetOf<String>()
             val v6 = linkedSetOf<String>()
@@ -605,19 +628,14 @@ class MainActivity : Activity() {
                         val (code, countryName, addresses) = future.get()
                         val existingLabel = countryCodes.entries.firstOrNull { it.value.equals(code, true) }?.key
                         countryNamesByCode.putIfAbsent(code, existingLabel ?: countryName)
-                        countryResults.getOrPut(code) { linkedSetOf() }.addAll(addresses)
+                        val label = countryCodes.entries.firstOrNull { it.value.equals(code, true) }?.key
+                        val limit = label?.let { countryBatchLimits[it] } ?: 700
+                        val bucket = countryResults.getOrPut(code) { linkedSetOf() }
+                        addresses.forEach { address -> if (bucket.size < limit) bucket.add(address) }
                     } catch (_: Exception) { }
                 }
                 runOnUiThread {
-                    countryResults.forEach { (code, addresses) ->
-                        val label = countryCodes.entries.firstOrNull { it.value.equals(code, true) }?.key ?: code
-                        val known = countries[label].orEmpty().flatMap { listOf(it.first, it.second) }
-                            .filter { it.isNotBlank() }.toSet()
-                        discoveredCountryDns.getOrPut(label) { linkedSetOf() }.addAll(addresses.filter { it !in known })
-                    }
-                    saveCountryResearch()
-                    if (::countryGridContainer.isInitialized) renderCountryGrid()
-                    toast("فهرست DNS چین، آمریکا، ایران، فرانسه و کانادا در اولویت دریافت شد؛ ادامه جست‌وجوی عمومی در پس‌زمینه انجام می‌شود.")
+                    if (::ipv4Status.isInitialized) ipv4Status.text = "منابع پنج کشور دریافت شد؛ در حال تکمیل و دسته‌بندی نتایج…"
                 }
 
                 // The metadata JSON is essential: unlike a plain global IP list, it preserves
@@ -627,7 +645,10 @@ class MainActivity : Activity() {
                 })
                 val tagged = try { taggedFuture.get(12, TimeUnit.SECONDS) } catch (_: Exception) { Pair(emptyMap(), emptyMap()) }
                 tagged.first.forEach { (code, addresses) ->
-                    countryResults.getOrPut(code) { linkedSetOf() }.addAll(addresses)
+                    val label = countryCodes.entries.firstOrNull { it.value.equals(code, true) }?.key
+                    val limit = label?.let { countryBatchLimits[it] } ?: 700
+                    val bucket = countryResults.getOrPut(code) { linkedSetOf() }
+                    addresses.forEach { address -> if (bucket.size < limit) bucket.add(address) }
                 }
                 countryNamesByCode.putAll(tagged.second)
                 countryResults.values.forEach { addresses ->
@@ -661,7 +682,12 @@ class MainActivity : Activity() {
                         ?: countryNamesByCode[code] ?: code
                     val known = countries[label].orEmpty().flatMap { listOf(it.first, it.second) }
                         .filter { it.isNotBlank() }.toSet()
-                    discoveredCountryDns.getOrPut(label) { linkedSetOf() }.addAll(addresses.filter { it !in known })
+                    val existing = discoveredCountryDns.getOrPut(label) { linkedSetOf() }
+                    // Each Research pass adds up to 700 previously unseen addresses per country.
+                    // Re-running Research skips existing entries and can append the next batch.
+                    val nextBatch = addresses.asSequence().filter { it !in known && it !in existing }
+                        .take(700).toList()
+                    existing.addAll(nextBatch)
                 }
                 discoveredIpv4.addAll(v4)
                 discoveredIpv6.addAll(v6)
@@ -839,6 +865,129 @@ class MainActivity : Activity() {
         }.apply { name = "DNSchOne-Probe-IPv$version"; isDaemon = true; start() }
     }
 
+    /** Opens a country-wide ranking based on measured DNS UDP/53 response time. */
+    private fun showCountryPowersDialog() {
+        if (countryPowerLoading) {
+            toast("آزمایش Ping هنوز در حال انجام است؛ کمی صبر کنید.")
+            return
+        }
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(12), dp(8), dp(12), dp(8)) }
+        val statusView = TextView(this).apply {
+            text = if (countryPowerLoading) "در حال سنجش Ping سرورها…" else "رتبه‌بندی بر اساس کمترین زمان پاسخ DNS؛ مقدار کمتر بهتر است."
+            textSize = 12f
+            setTextColor(0xFF42536A.toInt())
+        }
+        val results = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val scroll = ScrollView(this).apply { addView(results) }
+        box.addView(statusView, LinearLayout.LayoutParams(-1, -2))
+        box.addView(scroll, LinearLayout.LayoutParams(-1, dp(420)))
+        val dialog = android.app.AlertDialog.Builder(this).setTitle("Powers | قوی‌ترین DNSها")
+            .setView(box).setPositiveButton("بستن", null).create()
+
+        fun renderRanking() {
+            results.removeAllViews()
+            val ranked = mutableListOf<Triple<String, String, Long>>()
+            countries.forEach { (country, seeds) ->
+                val addresses = (seeds.flatMap { listOf(it.first, it.second) } + discoveredCountryDns[country].orEmpty()).distinct()
+                addresses.forEach { ip -> dnsPingLatencyMs[ip]?.let { ranked.add(Triple(country, ip, it)) } }
+            }
+            ranked.sortBy { it.third }
+            countryBestDns.clear()
+            countries.keys.forEach { country ->
+                ranked.firstOrNull { it.first == country }?.let { countryBestDns[country] = it.second }
+            }
+            if (ranked.isEmpty()) {
+                results.addView(TextView(this).apply { text = "هنوز DNS پاسخ‌گوی قابل‌اندازه‌گیری پیدا نشده است."; textSize = 12f })
+            } else {
+                ranked.forEachIndexed { index, row ->
+                    results.addView(TextView(this).apply {
+                        text = "${index + 1}.  ${row.first}  •  ${row.second}  •  ${row.third} ms" +
+                            if (countryBestDns[row.first] == row.second) "  ⭐⭐⭐" else ""
+                        textSize = 13f
+                        setTextColor(0xFF1B3554.toInt())
+                        setPadding(dp(3), dp(6), dp(3), dp(6))
+                    })
+                    if (index < ranked.lastIndex) results.addView(DashedDividerView(this@MainActivity), LinearLayout.LayoutParams(-1, dp(1)))
+                }
+            }
+            statusView.text = "${ranked.size} DNS پاسخ‌گو؛ مرتب‌شده از Ping کمتر به بیشتر. نتیجه به شبکه فعلی شما وابسته است."
+            if (::countryGridContainer.isInitialized) renderCountryGrid()
+        }
+
+        dialog.setOnShowListener {
+            // Probe a small representative batch per country per tap. Testing thousands
+            // of endpoints at once can exhaust sockets, threads, and memory on phones.
+            val candidates = countries.mapValues { (country, seeds) ->
+                (seeds.flatMap { listOf(it.first, it.second) } + discoveredCountryDns[country].orEmpty()).distinct()
+            }
+            val totalCandidates = candidates.values.sumOf { it.size }
+            if (totalCandidates == 0) {
+                statusView.text = "ابتدا Research را اجرا کنید تا DNSهای کشورها دریافت شوند."
+                return@setOnShowListener
+            }
+            // Test at most 30 new addresses per country per tap. Repeated taps
+            // continue with the next untested batch instead of re-testing the same IPs.
+            val untested = candidates.flatMap { (country, ips) ->
+                ips.filterNot { dnsPingLatencyMs.containsKey(it) }.take(30).map { ip -> country to ip }
+            }
+            if (untested.isEmpty()) {
+                renderRanking()
+                return@setOnShowListener
+            }
+            countryPowerLoading = true
+            statusView.text = "در حال سنجش ${untested.size} آدرس جدید DNS؛ لطفاً منتظر بمانید…"
+            Thread {
+                val pool = Executors.newFixedThreadPool(8)
+                try {
+                    val tasks = untested.map { (country, ip) -> Callable {
+                        val ping = dnsPingMillis(ip)
+                        Triple(country, ip, ping)
+                    } }
+                    pool.invokeAll(tasks, 45, TimeUnit.SECONDS).forEach { future ->
+                        try {
+                            val (_, ip, ping) = future.get()
+                            if (ping != null) synchronized(dnsPingLatencyMs) { dnsPingLatencyMs[ip] = ping }
+                        } catch (_: Exception) { }
+                    }
+                } catch (_: Exception) {
+                    // A partial ranking is still useful if the network or probe pool is interrupted.
+                } finally { pool.shutdownNow() }
+                runOnUiThread {
+                    countryPowerLoading = false
+                    renderRanking()
+                }
+            }.apply { name = "DNS-Changer-Powers-Probe"; isDaemon = true; start() }
+        }
+        dialog.show()
+    }
+
+    /** Measures a real UDP/53 DNS query round-trip; null means no valid response. */
+    private fun dnsPingMillis(ip: String): Long? {
+        return try {
+            val id = (System.nanoTime().toInt() and 0xffff)
+            val qname = byteArrayOf(7, 101, 120, 97, 109, 112, 108, 101, 3, 99, 111, 109, 0)
+            val query = ByteArray(12 + qname.size + 4)
+            query[0] = (id shr 8).toByte(); query[1] = id.toByte()
+            query[2] = 1; query[5] = 1
+            System.arraycopy(qname, 0, query, 12, qname.size)
+            val end = 12 + qname.size
+            query[end] = 0; query[end + 1] = 1; query[end + 2] = 0; query[end + 3] = 1
+            java.net.DatagramSocket().use { socket ->
+                socket.soTimeout = 1000
+                val destination = InetAddress.getByName(ip)
+                val start = android.os.SystemClock.elapsedRealtime()
+                socket.send(java.net.DatagramPacket(query, query.size, destination, 53))
+                val buffer = ByteArray(2048)
+                val response = java.net.DatagramPacket(buffer, buffer.size)
+                socket.receive(response)
+                val responseId = (((buffer[0].toInt() and 255) shl 8) or (buffer[1].toInt() and 255))
+                if (response.length >= 12 && responseId == id && (buffer[2].toInt() and 0x80) != 0)
+                    (android.os.SystemClock.elapsedRealtime() - start).coerceAtLeast(1L)
+                else null
+            }
+        } catch (_: Exception) { null }
+    }
+
     private fun dnsResponds(ip: String): Boolean {
         return try {
             val id = (System.nanoTime().toInt() and 0xffff)
@@ -905,7 +1054,7 @@ class MainActivity : Activity() {
         return dp((screenDp - 390 - 56).coerceIn(120, 374))
     }
 
-    private fun resolverListCard(title: String, resolvers: List<Resolver>, listHeight: Int, dividerBeforeIndex: Int? = null): View {
+    private fun resolverListCard(title: String, resolvers: List<Resolver>, listHeight: Int, dividerBeforeIndex: Int? = null, countryKey: String? = null): View {
         return panelCard(title) {
             val list = LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.VERTICAL
@@ -955,8 +1104,13 @@ class MainActivity : Activity() {
                             setTextColor(0xFF1C2B40.toInt())
                         })
                     }
-                    item.addView(dnsAddressButton(if (discoveredEntry) resolver.first else "DNS اول: ${resolver.first}", resolver.first))
-                    if (resolver.second.isNotBlank()) item.addView(dnsAddressButton(if (discoveredEntry) resolver.second else "DNS دوم: ${resolver.second}", resolver.second))
+                    fun addressLabel(prefix: String, address: String): String {
+                        val onlineMark = if (discoveredEntry || dnsPingLatencyMs.containsKey(address)) "🟢 " else ""
+                        val bestMark = if (countryKey != null && countryBestDns[countryKey] == address) "  ⭐⭐⭐" else ""
+                        return "$onlineMark$prefix$address$bestMark"
+                    }
+                    item.addView(dnsAddressButton(addressLabel(if (discoveredEntry) "" else "DNS اول: ", resolver.first), resolver.first))
+                    if (resolver.second.isNotBlank()) item.addView(dnsAddressButton(addressLabel(if (discoveredEntry) "" else "DNS دوم: ", resolver.second), resolver.second))
                     if (resolver.note.isNotBlank()) item.addView(TextView(this@MainActivity).apply {
                         text = resolver.note
                         textSize = 7f
@@ -984,7 +1138,7 @@ class MainActivity : Activity() {
                 minHeight = dp(24)
                 setPadding(dp(1), 0, dp(1), 0)
                 setOnClickListener { anchor ->
-                    val options = listOf("ترتیب اصلی", "گروه‌بندی سری‌های مشابه", "ابتدا عدد یک‌رقمی", "ابتدا عدد دورقمی", "ابتدا عدد سه‌رقمی")
+                    val options = listOf("ترتیب اصلی", "گروه‌بندی سری‌های مشابه", "ابتدا عدد یک‌رقمی", "ابتدا عدد دورقمی", "ابتدا عدد سه‌رقمی", "قدرت بیشتر / Ping کمتر", "قدرت کمتر / Ping بیشتر")
                     android.widget.PopupMenu(this@MainActivity, anchor).apply {
                         options.forEachIndexed { index, label -> menu.add(0, index, index, label) }
                         setOnMenuItemClickListener { selected ->
@@ -1003,6 +1157,12 @@ class MainActivity : Activity() {
                                         { it.index }
                                     )).map { it.value }
                                 }
+                                5 -> indexed.sortedWith(compareBy<IndexedValue<Resolver>>(
+                                    { dnsPingLatencyMs[it.value.first] ?: Long.MAX_VALUE }, { it.value.first }
+                                )).map { it.value }
+                                6 -> indexed.sortedWith(compareByDescending<IndexedValue<Resolver>>(
+                                    { dnsPingLatencyMs[it.value.first] ?: Long.MIN_VALUE }
+                                )).map { it.value }
                                 else -> resolvers.toList()
                             }
                             visibleCount = 50
@@ -1492,22 +1652,22 @@ class MainActivity : Activity() {
 پس از انتخاب دو آدرس، دکمه «روشن کردن DNS» را بزنید و درخواست اتصال VPN اندروید را تأیید کنید. برای توقف، همان دکمه را دوباره بزنید. این برنامه برای راه‌اندازی سرویس به مجوز VPN محلی اندروید نیاز دارد و به روت احتیاج ندارد.
 
 ۳) پنجره کشورهای چین، آمریکا، ایران و فرانسه
-در زبانه «کشورها» چهار پنجره کشور در سه ستون نمایش داده می‌شوند؛ پنجره چهارم در ردیف بعدی قرار می‌گیرد. هر پنجره فهرست مستقل خود را دارد و داخل همان پنجره می‌توانید به‌صورت جداگانه اسکرول کنید. لمس هر آدرس آن را در DNS 1 یا DNS 2 انتخاب‌شده قرار می‌دهد. برچسب کشور کنار آدرس‌ها، کشور فهرست یا منبع ثبت‌شده را نشان می‌دهد؛ بعضی DNSها Anycast و جهانی هستند و الزاماً فقط در همان کشور میزبانی نمی‌شوند.
+در زبانه «کشورها» پنج پنجره کشور در سه ستون نمایش داده می‌شوند؛ پنجره‌های چهارم و پنجم در ردیف بعدی قرار می‌گیرند. هر پنجره فهرست مستقل خود را دارد و داخل همان پنجره می‌توانید به‌صورت جداگانه اسکرول کنید. لمس هر آدرس آن را در DNS 1 یا DNS 2 انتخاب‌شده قرار می‌دهد. برچسب کشور کنار آدرس‌ها، کشور فهرست یا منبع ثبت‌شده را نشان می‌دهد؛ بعضی DNSها Anycast و جهانی هستند و الزاماً فقط در همان کشور میزبانی نمی‌شوند.
 
 ۴) Research
-دکمه Research فهرست‌های DNS عمومی و کشوری را دوباره از منابع آنلاین بررسی و به‌روزرسانی می‌کند. دریافت نتایج به اینترنت و در دسترس بودن منبع بستگی دارد. تعداد نتایج نمایش‌داده‌شده ممکن است با تعداد آدرس‌های پاسخ‌گو متفاوت باشد؛ هر DNS را روی شبکه خود آزمایش کنید.
+هر بار فشردن Research تا ۷۰۰ DNS تازه و غیرتکراری برای هر کشور از منابع آنلاین دریافت و به فهرست قبلی اضافه می‌کند؛ برای ادامه جست‌وجو دوباره آن را بزنید. دریافت نتایج به اینترنت و در دسترس بودن منبع بستگی دارد. تعداد نتایج نمایش‌داده‌شده ممکن است با تعداد آدرس‌های پاسخ‌گو متفاوت باشد؛ هر DNS را روی شبکه خود آزمایش کنید.
 
 ۵) جستجوی سراسری
 با دکمه «جستجو» می‌توانید در مجموعه فهرست‌ها جستجو کنید و آدرس یا نام سرویس‌دهنده را پیدا کنید.
 
 ۶) مرتب‌سازی و مشاهده نتایج بیشتر
-در پنجره‌های فهرست، دکمه Sort برای مرتب‌سازی آدرس‌ها بر اساس ترتیب عددی ابتدای IP و گزینه نمایش نتایج بعدی برای دیدن ادامه فهرست به کار می‌رود. در فهرست‌های طولانی، داخل پنجره مربوطه اسکرول کنید.
+در پنجره‌های کشور، Sort علاوه بر ترتیب عددی IP، مرتب‌سازی بر اساس Ping کمتر یا بیشتر را نیز دارد. دکمه Powers سرورهای پاسخ‌گو را با زمان پاسخ و نام کشور رتبه‌بندی می‌کند؛ Ping کمتر در شبکه فعلی سریع‌تر است. در فهرست‌های طولانی، داخل پنجره مربوطه اسکرول کنید.
 
 ۷) وارد کردن فهرست شخصی
 در زبانه کشورها از «ورود فهرست متنی» یا «ورود فایل TXT» استفاده کنید. آدرس‌های IPv4 یا IPv6 موجود در فایل استخراج و موارد تکراری یا نامعتبر تا حد امکان کنار گذاشته می‌شوند.
 
 ۸) IPv6
-در بخش IPv6 فهرست آدرس‌های سازگار را ببینید و در صورت نیاز گزینه «فعال‌سازی اختیاری DNSهای IPv6» را روشن کنید. استفاده از IPv6 اختیاری است و به پشتیبانی شبکه و اپراتور شما بستگی دارد.
+در بخش IPv6 فهرست آدرس‌های سازگار را ببینید و در صورت نیاز گزینه «فعال‌سازی اختیاری DNSهای IPv6» را روشن کنید. دکمه Powers کنار IPv6 رتبه‌بندی Ping DNS کشورهای دارای پنجره را نمایش می‌دهد. استفاده از IPv6 اختیاری است و به پشتیبانی شبکه و اپراتور شما بستگی دارد.
 
 ۹) DNSهای عمومی و ذخیره‌شده
 زبانه «DNS عمومی» شامل سرویس‌دهنده‌های شناخته‌شده و نتایج آنلاین است. در بخش «ذخیره‌شده» می‌توانید جفت DNSهای مورد استفاده خود را نگهداری و دوباره انتخاب کنید.
@@ -1626,9 +1786,11 @@ class MainActivity : Activity() {
                 val country = keys.next()
                 val array = saved.optJSONArray(country) ?: continue
                 val values = discoveredCountryDns.getOrPut(country) { linkedSetOf() }
-                for (i in 0 until array.length()) {
+                // Older builds could persist several thousand entries per country.
+                // Start with a safe first batch; Research can append another batch on demand.
+                for (i in 0 until minOf(array.length(), 700)) {
                     val ip = array.optString(i)
-                    if (validIp(ip) || validIpv6(ip)) values.add(ip)
+                    if ((validIp(ip) || validIpv6(ip)) && values.size < 700) values.add(ip)
                 }
             }
         } catch (_: Exception) { }
