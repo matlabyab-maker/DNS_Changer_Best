@@ -295,15 +295,15 @@ class MainActivity : Activity() {
         ipv6AndPowers.addView(ipv6Toggle, LinearLayout.LayoutParams(0, dp(48), 1.35f))
         val powersButton = Button(this).apply {
             text = "Powers"
-            textSize = 11f
+            textSize = 15f
             isAllCaps = false
             minWidth = 0
             minimumWidth = 0
-            minHeight = dp(40)
-            setPadding(dp(2), 0, dp(2), 0)
+            minHeight = dp(46)
+            setPadding(dp(5), 0, dp(5), 0)
             setOnClickListener { showCountryPowersDialog() }
         }
-        ipv6AndPowers.addView(powersButton, LinearLayout.LayoutParams(0, dp(42), 0.85f).apply { marginStart = dp(2) })
+        ipv6AndPowers.addView(powersButton, LinearLayout.LayoutParams(0, dp(48), 1.0f).apply { marginStart = dp(2) })
         activationRow.addView(ipv6AndPowers, LinearLayout.LayoutParams(0, dp(48), 1.75f))
         dnsCard.addView(activationRow, LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(2) })
 
@@ -518,7 +518,7 @@ class MainActivity : Activity() {
             }
             addView(ipv4Search, LinearLayout.LayoutParams(-1, dp(44)))
             addView(Button(this@MainActivity).apply {
-                text = "جست‌وجو / به‌روزرسانی فهرست IPv4"
+                text = "دریافت ۵۰ DNS بعدی IPv4"
                 isAllCaps = false
                 setOnClickListener { refreshPublicDns(force = true) }
             }, LinearLayout.LayoutParams(-1, dp(42)))
@@ -573,17 +573,20 @@ class MainActivity : Activity() {
         }, LinearLayout.LayoutParams(-1, dp(42)))
     }
 
-    private fun refreshPublicDns(force: Boolean = false) {
+    private fun refreshPublicDns(force: Boolean = false, requestedCountry: String? = null) {
         if (discoveryLoading) return
         if (!force && discoveredIpv4.isNotEmpty() && discoveredIpv6.isNotEmpty() &&
             countryCodes.keys.all { discoveredCountryDns[it]?.isNotEmpty() == true }) return
         discoveryLoading = true
-        if (::ipv4Status.isInitialized) ipv4Status.text = "در حال دریافت فهرست کامل DNS کشورها…"
+        if (::ipv4Status.isInitialized) ipv4Status.text = "در حال دریافت ۵۰ DNS نخست هر کشور…"
         if (::ipv6Status.isInitialized) ipv6Status.text = "در حال جست‌وجوی آنلاین IPv6…"
         if (::countryGridContainer.isInitialized) renderCountryGrid()
 
+        // Research is deliberately paged: one tap requests at most 50 new addresses
+        // for each selected country, with a hard ceiling of 700 discovered entries.
         val countryBatchLimits = countryCodes.keys.associate { country ->
-            country to ((discoveredCountryDns[country]?.size ?: 0) + 700)
+            val shouldFetch = requestedCountry == null || requestedCountry == country
+            country to minOf(700, (discoveredCountryDns[country]?.size ?: 0) + if (shouldFetch) 50 else 0)
         }
         Thread {
             val v4 = linkedSetOf<String>()
@@ -604,7 +607,9 @@ class MainActivity : Activity() {
                 // for the slower global catalog and IPv6 feeds.
                 // Supplement the countries already shown in Persian with independent feeds.
                 // Fetch every feed even after 100 entries: merge all unique results, never truncate.
-                val countrySources = countryCodes.flatMap { (countryName, code) ->
+                val countrySources = countryCodes.filter { (countryName, _) ->
+                    requestedCountry == null || requestedCountry == countryName
+                }.flatMap { (countryName, code) ->
                     val lower = code.lowercase(java.util.Locale.ROOT)
                     buildList {
                         add(Triple(code, countryName, "https://raw.githubusercontent.com/pingproxies/public-dns-directory/main/resolvers/by-country/$code.txt"))
@@ -646,7 +651,8 @@ class MainActivity : Activity() {
                 val tagged = try { taggedFuture.get(12, TimeUnit.SECONDS) } catch (_: Exception) { Pair(emptyMap(), emptyMap()) }
                 tagged.first.forEach { (code, addresses) ->
                     val label = countryCodes.entries.firstOrNull { it.value.equals(code, true) }?.key
-                    val limit = label?.let { countryBatchLimits[it] } ?: 700
+                    if (requestedCountry != null && label != requestedCountry) return@forEach
+                    val limit = label?.let { countryBatchLimits[it] } ?: 50
                     val bucket = countryResults.getOrPut(code) { linkedSetOf() }
                     addresses.forEach { address -> if (bucket.size < limit) bucket.add(address) }
                 }
@@ -658,14 +664,16 @@ class MainActivity : Activity() {
                 }
 
                 // Independent global lists supplement the tagged country dataset.
-                pool.invokeAll(globalSources.map { source -> Callable { fetchDnsFeed(source) } }, 18, TimeUnit.SECONDS)
-                    .forEach { future ->
-                        try {
-                            val result = future.get()
-                            v4.addAll(result.first)
-                            v6.addAll(result.second)
-                        } catch (_: Exception) { }
-                    }
+                if (requestedCountry == null) {
+                    pool.invokeAll(globalSources.map { source -> Callable { fetchDnsFeed(source) } }, 18, TimeUnit.SECONDS)
+                        .forEach { future ->
+                            try {
+                                val result = future.get()
+                                v4.addAll(result.first)
+                                v6.addAll(result.second)
+                            } catch (_: Exception) { }
+                        }
+                }
 
 
             } catch (_: Exception) {
@@ -685,12 +693,15 @@ class MainActivity : Activity() {
                     val existing = discoveredCountryDns.getOrPut(label) { linkedSetOf() }
                     // Each Research pass adds up to 700 previously unseen addresses per country.
                     // Re-running Research skips existing entries and can append the next batch.
+                    val remainingCapacity = (700 - existing.size).coerceAtLeast(0)
                     val nextBatch = addresses.asSequence().filter { it !in known && it !in existing }
-                        .take(700).toList()
+                        .take(minOf(50, remainingCapacity)).toList()
                     existing.addAll(nextBatch)
                 }
-                discoveredIpv4.addAll(v4)
-                discoveredIpv6.addAll(v6)
+                if (requestedCountry == null) {
+                    discoveredIpv4.addAll(v4.filterNot { it in discoveredIpv4 }.take(50))
+                    discoveredIpv6.addAll(v6.filterNot { it in discoveredIpv6 }.take(50))
+                }
                 discoveryLoading = false
                 saveCountryResearch()
                 if (v4.isNotEmpty() || discoveredCountryDns.values.any { it.isNotEmpty() }) newDataTabs.add(0)
@@ -709,7 +720,7 @@ class MainActivity : Activity() {
                 if (countryTotal == 0 && v4.isEmpty() && v6.isEmpty()) {
                     toast("دریافت آنلاین ممکن نشد؛ اینترنت یا دسترسی به منابع DNS را بررسی کنید.")
                 } else {
-                    toast("پژوهش پایان یافت: $countryTotal DNS یکتای کشوری؛ پنجره‌های مستقل: چین، آمریکا، ایران، فرانسه و کانادا؛ سایر کشورها در جست‌وجوی سراسری.")
+                    toast("این نوبت پایان یافت: $countryTotal DNS کشوری ذخیره شد. برای دریافت ۵۰ مورد بعدی، دکمه همان پنجره را بزنید؛ سقف هر کشور ۷۰۰ مورد است.")
                 }
             }
         }.apply { name = "DNStow-CountryDNS-Research"; isDaemon = true; start() }
@@ -873,7 +884,7 @@ class MainActivity : Activity() {
         }
         val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(12), dp(8), dp(12), dp(8)) }
         val statusView = TextView(this).apply {
-            text = if (countryPowerLoading) "در حال سنجش Ping سرورها…" else "رتبه‌بندی بر اساس کمترین زمان پاسخ DNS؛ مقدار کمتر بهتر است."
+            text = if (countryPowerLoading) "در حال سنجش Ping سرورها…" else "رتبه‌بندی بر اساس کمترین زمان پاسخ DNS؛ عدد کمتر قوی‌تر است. لمس: انتخاب DNS؛ نگه‌داشتن: کپی."
             textSize = 12f
             setTextColor(0xFF42536A.toInt())
         }
@@ -900,13 +911,11 @@ class MainActivity : Activity() {
                 results.addView(TextView(this).apply { text = "هنوز DNS پاسخ‌گوی قابل‌اندازه‌گیری پیدا نشده است."; textSize = 12f })
             } else {
                 ranked.forEachIndexed { index, row ->
-                    results.addView(TextView(this).apply {
-                        text = "${index + 1}.  ${row.first}  •  ${row.second}  •  ${row.third} ms" +
-                            if (countryBestDns[row.first] == row.second) "  ⭐⭐⭐" else ""
-                        textSize = 13f
-                        setTextColor(0xFF1B3554.toInt())
-                        setPadding(dp(3), dp(6), dp(3), dp(6))
-                    })
+                    results.addView(dnsAddressButton(
+                        "${index + 1}.  ${row.first}  •  ${row.second}  •  ${row.third} ms" +
+                            if (countryBestDns[row.first] == row.second) "  ⭐⭐⭐" else "",
+                        row.second
+                    ), LinearLayout.LayoutParams(-1, dp(42)))
                     if (index < ranked.lastIndex) results.addView(DashedDividerView(this@MainActivity), LinearLayout.LayoutParams(-1, dp(1)))
                 }
             }
@@ -1109,8 +1118,33 @@ class MainActivity : Activity() {
                         val bestMark = if (countryKey != null && countryBestDns[countryKey] == address) "  ⭐⭐⭐" else ""
                         return "$onlineMark$prefix$address$bestMark"
                     }
-                    item.addView(dnsAddressButton(addressLabel(if (discoveredEntry) "" else "DNS اول: ", resolver.first), resolver.first))
-                    if (resolver.second.isNotBlank()) item.addView(dnsAddressButton(addressLabel(if (discoveredEntry) "" else "DNS دوم: ", resolver.second), resolver.second))
+                    fun addNumberedDns(address: String, number: Int, prefix: String) {
+                        val line = LinearLayout(this@MainActivity).apply {
+                            orientation = LinearLayout.HORIZONTAL
+                            gravity = Gravity.CENTER_VERTICAL
+                        }
+                        val online = responsiveIpv4.contains(address) || responsiveIpv6.contains(address) || dnsPingLatencyMs.containsKey(address)
+                        line.addView(TextView(this@MainActivity).apply {
+                            text = if (online) "●" else "○"
+                            textSize = 11f
+                            gravity = Gravity.CENTER
+                            setTextColor(if (online) 0xFF16A34A.toInt() else 0xFF94A3B8.toInt())
+                        }, LinearLayout.LayoutParams(dp(17), dp(34)))
+                        line.addView(TextView(this@MainActivity).apply {
+                            text = number.toString()
+                            textSize = 9f
+                            gravity = Gravity.CENTER
+                            setTextColor(0xFF334155.toInt())
+                            background = android.graphics.drawable.GradientDrawable().apply {
+                                setColor(0xFFE8EDF4.toInt()); cornerRadius = dp(5).toFloat()
+                            }
+                        }, LinearLayout.LayoutParams(dp(23), dp(28)).apply { marginEnd = dp(3) })
+                        line.addView(dnsAddressButton(addressLabel(prefix, address).replace("🟢 ", "").replace("  ✓ پاسخ‌گو", ""), address),
+                            LinearLayout.LayoutParams(0, -2, 1f))
+                        item.addView(line, LinearLayout.LayoutParams(-1, -2))
+                    }
+                    addNumberedDns(resolver.first, 1, if (discoveredEntry) "" else "DNS اول: ")
+                    if (resolver.second.isNotBlank()) addNumberedDns(resolver.second, 2, if (discoveredEntry) "" else "DNS دوم: ")
                     if (resolver.note.isNotBlank()) item.addView(TextView(this@MainActivity).apply {
                         text = resolver.note
                         textSize = 7f
@@ -1125,20 +1159,23 @@ class MainActivity : Activity() {
                         })
                     }
                 }
-                moreButton?.visibility = if (endIndex < currentResolvers.size) View.VISIBLE else View.GONE
+                val canFetchNextBatch = countryKey != null && (discoveredCountryDns[countryKey]?.size ?: 0) < 700
+                moreButton?.visibility = if (endIndex < currentResolvers.size || canFetchNextBatch) View.VISIBLE else View.GONE
                 if (endIndex < currentResolvers.size) {
-                    moreButton?.text = "نمایش ۵۰ DNS بعدی (${endIndex} از ${currentResolvers.size})"
+                    moreButton?.text = "نمایش ۵۰ مورد بعدی (${endIndex} از ${currentResolvers.size})"
+                } else if (canFetchNextBatch) {
+                    moreButton?.text = "دریافت ۵۰ DNS تازه"
                 }
                 innerScroll?.post { innerScroll?.scrollTo(0, oldY) }
             }
 
             val sortButton = Button(this@MainActivity).apply {
                 text = "↕ Sort  |  مرتب‌سازی: $currentSort"
-                textSize = 8f
-                minHeight = dp(24)
+                textSize = 9f
+                minHeight = dp(30)
                 setPadding(dp(1), 0, dp(1), 0)
                 setOnClickListener { anchor ->
-                    val options = listOf("ترتیب اصلی", "گروه‌بندی سری‌های مشابه", "ابتدا عدد یک‌رقمی", "ابتدا عدد دورقمی", "ابتدا عدد سه‌رقمی", "قدرت بیشتر / Ping کمتر", "قدرت کمتر / Ping بیشتر")
+                    val options = listOf("ترتیب اصلی", "گروه‌بندی سری‌های مشابه", "ابتدا عدد یک‌رقمی", "ابتدا عدد دورقمی", "ابتدا عدد سه‌رقمی", "قدرت بیشتر / Ping کمتر", "قدرت کمتر / Ping بیشتر", "مرتب‌سازی بر اساس کشور")
                     android.widget.PopupMenu(this@MainActivity, anchor).apply {
                         options.forEachIndexed { index, label -> menu.add(0, index, index, label) }
                         setOnMenuItemClickListener { selected ->
@@ -1163,6 +1200,10 @@ class MainActivity : Activity() {
                                 6 -> indexed.sortedWith(compareByDescending<IndexedValue<Resolver>>(
                                     { dnsPingLatencyMs[it.value.first] ?: Long.MIN_VALUE }
                                 )).map { it.value }
+                                7 -> indexed.sortedWith(compareBy<IndexedValue<Resolver>>(
+                                    { Regex("کشور\\s*:\\s*([^|]+)").find(it.value.note)?.groupValues?.getOrNull(1)?.trim()?.lowercase().orEmpty() },
+                                    { it.value.first }
+                                )).map { it.value }
                                 else -> resolvers.toList()
                             }
                             visibleCount = 50
@@ -1178,12 +1219,18 @@ class MainActivity : Activity() {
             listActions.addView(sortButton, LinearLayout.LayoutParams(0, dp(48), 1f).apply { marginEnd = dp(2) })
             moreButton = Button(this@MainActivity).apply {
                 isAllCaps = false
-                textSize = 8f
-                minHeight = dp(24)
+                textSize = 9f
+                minHeight = dp(30)
                 setPadding(dp(1), 0, dp(1), 0)
                 setOnClickListener {
-                    visibleCount = minOf(visibleCount + 50, currentResolvers.size)
-                    renderItems(showOnlineDivider = discoveryLoading)
+                    if (visibleCount < currentResolvers.size) {
+                        visibleCount = minOf(visibleCount + 50, currentResolvers.size)
+                        renderItems(showOnlineDivider = discoveryLoading)
+                    } else if (countryKey != null && (discoveredCountryDns[countryKey]?.size ?: 0) < 700) {
+                        text = "در حال دریافت…"
+                        isEnabled = false
+                        refreshPublicDns(force = true, requestedCountry = countryKey)
+                    }
                 }
             }
             listActions.addView(moreButton, LinearLayout.LayoutParams(0, dp(48), 1f).apply { marginStart = dp(2) })
@@ -1271,7 +1318,13 @@ class MainActivity : Activity() {
             setOnClickListener {
                 if (targetField == 1) dns1.setText(address) else dns2.setText(address)
                 save()
-                toast("$address در DNS $targetField قرار گرفت.")
+                toast("$address در DNS $targetField قرار گرفت. برای کپی، چند لحظه نگه دارید.")
+            }
+            setOnLongClickListener {
+                val clipboard = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                clipboard.setPrimaryClip(android.content.ClipData.newPlainText("DNS", address))
+                toast("$address کپی شد.")
+                true
             }
         }
     }
