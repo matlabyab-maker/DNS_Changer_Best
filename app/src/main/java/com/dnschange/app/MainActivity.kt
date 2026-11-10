@@ -177,8 +177,11 @@ class MainActivity : Activity() {
         val activeYellow = 0xFFFFD54F.toInt()
         val inactiveBlue = 0xFF1976D2.toInt()
         val mainText = if (vpnEnabled) "خاموش کردن DNS" else "روشن کردن DNS"
-        toggleButton.text = "On : Yellow  |  Off : Blue\n$mainText"
-        toggleButton.textSize = 10f
+        toggleButton.text = mainText
+        toggleButton.textSize = 19f
+        if (android.os.Build.VERSION.SDK_INT >= 26) {
+            toggleButton.setAutoSizeTextTypeUniformWithConfiguration(14, 20, 1, android.util.TypedValue.COMPLEX_UNIT_SP)
+        }
         toggleButton.gravity = Gravity.CENTER
         toggleButton.backgroundTintList = null
         toggleButton.background = android.graphics.drawable.GradientDrawable().apply {
@@ -200,8 +203,8 @@ class MainActivity : Activity() {
         setContentView(page)
 
         page.addView(TextView(this).apply {
-            text = "DNStow"
-            textSize = 24f
+            text = "DNS_Changer_Best"
+            textSize = 16f
             gravity = Gravity.CENTER
             setTextColor(0xFF152238.toInt())
             setPadding(0, 0, 0, dp(2))
@@ -219,7 +222,7 @@ class MainActivity : Activity() {
         dnsRow.addView(dns2, LinearLayout.LayoutParams(0, dp(36), 1f).apply { marginStart = dp(5) })
         dnsCard.addView(dnsRow)
 
-        // Main activation button and its live status sit side by side.
+        // Main activation button and its status/color guide are side by side.
         val activationRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -233,43 +236,45 @@ class MainActivity : Activity() {
             setOnClickListener { toggleDns() }
         }
         updateToggleAppearance()
-        activationRow.addView(toggleButton, LinearLayout.LayoutParams(0, dp(48), 4f).apply { marginEnd = dp(5) })
+        activationRow.addView(toggleButton, LinearLayout.LayoutParams(0, dp(48), 3.0f).apply { marginEnd = dp(3) })
+        val statusAndGuide = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+        }
         status = TextView(this).apply {
             text = "وضعیت: خاموش"
-            textSize = 12f
+            textSize = 10f
             gravity = Gravity.CENTER
+            maxLines = 1
             setTextColor(0xFF42536A.toInt())
-            setPadding(dp(3), dp(4), dp(3), dp(4))
+            setPadding(dp(2), dp(2), dp(2), dp(2))
             background = android.graphics.drawable.GradientDrawable().apply {
                 setColor(0xFFF0F3F8.toInt())
-                cornerRadius = dp(7).toFloat()
+                cornerRadius = dp(6).toFloat()
                 setStroke(dp(1), 0xFFB8C5D5.toInt())
             }
         }
-        activationRow.addView(status, LinearLayout.LayoutParams(0, dp(48), 1.35f))
-        dnsCard.addView(activationRow, LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(2) })
+        statusAndGuide.addView(status, LinearLayout.LayoutParams(-1, dp(22)))
+        statusAndGuide.addView(TextView(this).apply {
+            text = "On : Yellow\nOff : Blue"
+            textSize = 8f
+            gravity = Gravity.CENTER
+            setTextColor(0xFF42536A.toInt())
+            setLineSpacing(0f, 0.9f)
+            maxLines = 2
+        }, LinearLayout.LayoutParams(-1, dp(25)))
+        activationRow.addView(statusAndGuide, LinearLayout.LayoutParams(0, dp(48), 1.15f).apply { marginEnd = dp(2) })
 
-        // DNS suggestion and optional IPv6 controls share one compact row.
-        val dnsOptionsRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        val suggestButton = Button(this).apply {
-            text = "پیشنهاد DNS"
-            textSize = 10f
-            isAllCaps = false
-            minHeight = dp(48)
-            minimumHeight = dp(48)
-            setPadding(dp(2), 0, dp(2), 0)
-            setOnClickListener { suggestSecondDns() }
-        }
-        dnsOptionsRow.addView(suggestButton, LinearLayout.LayoutParams(0, dp(48), 0.9f).apply {
-            marginEnd = dp(3)
-        })
-
+        // Optional IPv6 checkbox shares the main activation row to save vertical space.
         ipv6Toggle = CheckBox(this).apply {
             text = "IPv6 اختیاری"
-            textSize = 11f
+            textSize = 17f
+            maxLines = 1
+            minWidth = 0
+            setPadding(0, 0, 0, 0)
+            if (android.os.Build.VERSION.SDK_INT >= 26) {
+                setAutoSizeTextTypeUniformWithConfiguration(10, 17, 1, android.util.TypedValue.COMPLEX_UNIT_SP)
+            }
             isChecked = prefs.getBoolean("ipv6_enabled", false)
             setTextColor(0xFF1B3554.toInt())
             setOnCheckedChangeListener { _, checked ->
@@ -277,12 +282,8 @@ class MainActivity : Activity() {
                 toast(if (checked) "IPv6 در سرویس DNS فعال می‌شود." else "IPv6 غیرفعال شد.")
             }
         }
-        dnsOptionsRow.addView(ipv6Toggle, LinearLayout.LayoutParams(0, dp(48), 1.1f).apply {
-            marginStart = dp(3)
-        })
-        dnsCard.addView(dnsOptionsRow, LinearLayout.LayoutParams(-1, dp(48)).apply {
-            topMargin = dp(2)
-        })
+        activationRow.addView(ipv6Toggle, LinearLayout.LayoutParams(0, dp(48), 1.55f))
+        dnsCard.addView(activationRow, LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(2) })
 
         dns1.setOnClickListener { selectTarget(1) }
         dns2.setOnClickListener { selectTarget(2) }
@@ -574,18 +575,24 @@ class MainActivity : Activity() {
                 // Fetch every feed even after 100 entries: merge all unique results, never truncate.
                 val countrySources = countryCodes.flatMap { (countryName, code) ->
                     val lower = code.lowercase(java.util.Locale.ROOT)
-                    listOf(
-                        Triple(code, countryName, "https://raw.githubusercontent.com/pingproxies/public-dns-directory/main/resolvers/by-country/$code.txt"),
-                        Triple(code, countryName, "https://cdn.jsdelivr.net/gh/pingproxies/public-dns-directory@main/resolvers/by-country/$code.txt"),
-                        Triple(code, countryName, "https://public-dns.info/nameserver/$lower.txt"),
-                        Triple(code, countryName, "https://public-dns.info/nameserver/$lower.csv")
-                    )
+                    buildList {
+                        add(Triple(code, countryName, "https://raw.githubusercontent.com/pingproxies/public-dns-directory/main/resolvers/by-country/$code.txt"))
+                        add(Triple(code, countryName, "https://raw.githubusercontent.com/pingproxies/public-dns-directory/main/resolvers/by-country/$lower.txt"))
+                        add(Triple(code, countryName, "https://cdn.jsdelivr.net/gh/pingproxies/public-dns-directory@main/resolvers/by-country/$code.txt"))
+                        add(Triple(code, countryName, "https://public-dns.info/nameserver/$lower.txt"))
+                        add(Triple(code, countryName, "https://public-dns.info/nameserver/$lower.csv"))
+                        if (code == "US") {
+                            add(Triple(code, countryName, "https://public-dns.info/nameserver/us.json"))
+                            add(Triple(code, countryName, "https://public-dns.info/nameserver/US.txt"))
+                            add(Triple(code, countryName, "https://public-dns.info/nameserver/US.csv"))
+                        }
+                    }
                 }
                 val countryJobs = countrySources.map { entry -> Callable {
                     val result = fetchDnsFeed(entry.third)
                     Triple(entry.first, entry.second, result.first + result.second)
                 } }
-                pool.invokeAll(countryJobs, 24, TimeUnit.SECONDS).forEach { future ->
+                pool.invokeAll(countryJobs, 35, TimeUnit.SECONDS).forEach { future ->
                     try {
                         val (code, countryName, addresses) = future.get()
                         val existingLabel = countryCodes.entries.firstOrNull { it.value.equals(code, true) }?.key
@@ -690,14 +697,31 @@ class MainActivity : Activity() {
             }
             if (connection.responseCode !in 200..299) return Pair(grouped, names)
             val body = connection.inputStream.bufferedReader().use { it.readText() }
-            val root = JSONObject(body)
-            val rows = root.optJSONArray("resolvers") ?: root.optJSONArray("data") ?: JSONArray()
+            val parsed = org.json.JSONTokener(body).nextValue()
+            val rows = when (parsed) {
+                is JSONArray -> parsed
+                is JSONObject -> parsed.optJSONArray("resolvers")
+                    ?: parsed.optJSONArray("data")
+                    ?: parsed.optJSONArray("results")
+                    ?: parsed.optJSONArray("nameservers")
+                    ?: parsed.optJSONArray("dns")
+                    ?: JSONArray()
+                else -> JSONArray()
+            }
             for (index in 0 until rows.length()) {
                 val item = rows.optJSONObject(index) ?: continue
-                val ip = item.optString("ip", item.optString("address", "")).trim()
-                val code = item.optString("country_code", item.optString("countryCode", ""))
+                val ip = item.optString("ip", item.optString("address", item.optString("resolver", ""))).trim()
+                val rawCountryCode = item.optString("country_code",
+                    item.optString("countryCode", item.optString("country_iso", item.optString("country_iso_code", ""))))
                     .trim().uppercase(java.util.Locale.ROOT)
                 val country = item.optString("country", item.optString("country_name", "")).trim()
+                val code = when {
+                    rawCountryCode.matches(Regex("[A-Z]{2}")) -> rawCountryCode
+                    country.equals("United States", true) || country.equals("United States of America", true) || country.equals("USA", true) -> "US"
+                    country.equals("China", true) -> "CN"
+                    country.equals("Iran", true) || country.equals("Iran, Islamic Republic of", true) -> "IR"
+                    else -> ""
+                }
                 if (!code.matches(Regex("[A-Z]{2}")) || ip.isBlank()) continue
                 val version = if (ip.contains(":")) 6 else 4
                 if (!isPublicIp(ip, version)) continue
@@ -1448,26 +1472,6 @@ class MainActivity : Activity() {
     }
 
     private var pendingTxtExport: String? = null
-
-    private fun suggestSecondDns() {
-        val selected = if (targetField == 1) dns1.text.toString().trim() else dns2.text.toString().trim()
-        val pair = (countries.values.flatten() + searchOnlyCountrySeeds.values.flatten() + publicDns + ipv6Resolvers + importedResolvers + savedPairs)
-            .firstOrNull { (it.first == selected || it.second == selected) && it.first.isNotBlank() && it.second.isNotBlank() }
-        val suggestion = pair?.let { if (it.first == selected) it.second else it.first } ?: when (selected) {
-            "1.1.1.1" -> "1.0.0.1"; "1.0.0.1" -> "1.1.1.1"
-            "8.8.8.8" -> "8.8.4.4"; "8.8.4.4" -> "8.8.8.8"
-            "9.9.9.9" -> "149.112.112.112"; "149.112.112.112" -> "9.9.9.9"
-            "208.67.222.222" -> "208.67.220.220"; "208.67.220.220" -> "208.67.222.222"
-            else -> "برای این DNS جفت تأییدشده‌ای در فهرست فعلی پیدا نشد."
-        }
-        val target = if (targetField == 1) 2 else 1
-        android.app.AlertDialog.Builder(this).setTitle("پیشنهاد DNS مکمل برای کادر در حال ویرایش")
-            .setMessage("DNS پیشنهادی برای کادر DNS $target:\n$suggestion\n\nاین پیشنهاد از جفت ثبت‌شده همان سرویس‌دهنده انتخاب شده است؛ سرعت و دسترس‌پذیری نهایی به شبکه شما بستگی دارد.")
-            .setPositiveButton("قرار دادن در DNS $target") { _, _ ->
-                if (suggestion.contains(".") || suggestion.contains(":")) { if (target == 2) dns2.setText(suggestion) else dns1.setText(suggestion) }
-            }
-            .setNegativeButton("بستن", null).show()
-    }
 
     private fun showHowToWorkDialog() {
         val guide = """راهنمای کار با DNStow  |  How To Work
