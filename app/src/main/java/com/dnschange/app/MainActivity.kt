@@ -176,14 +176,15 @@ class MainActivity : Activity() {
         if (!::toggleButton.isInitialized) return
         val activeYellow = 0xFFFFD54F.toInt()
         val inactiveBlue = 0xFF1976D2.toInt()
-        val mainText = if (vpnEnabled) "ON  |  خاموش کردن DNS" else "OFF  |  روشن کردن DNS"
-        toggleButton.text = mainText
+        val mainText = if (vpnEnabled) "خاموش کردن DNS" else "روشن کردن DNS"
+        toggleButton.text = "On : Yellow  |  Off : Blue\n$mainText"
+        toggleButton.textSize = 10f
         toggleButton.gravity = Gravity.CENTER
         toggleButton.backgroundTintList = null
         toggleButton.background = android.graphics.drawable.GradientDrawable().apply {
             setColor(if (vpnEnabled) activeYellow else inactiveBlue)
             cornerRadius = dp(9).toFloat()
-            setStroke(dp(2), if (vpnEnabled) 0xFF9A7100.toInt() else 0xFF123F78.toInt())
+            setStroke(dp(4), if (vpnEnabled) 0xFF9A7100.toInt() else 0xFF123F78.toInt())
         }
         toggleButton.setTextColor(if (vpnEnabled) 0xFF302400.toInt() else 0xFFFFFFFF.toInt())
         toggleButton.elevation = if (vpnEnabled) dp(6).toFloat() else dp(2).toFloat()
@@ -317,7 +318,10 @@ class MainActivity : Activity() {
         fun compactAction(label: String, weight: Float, click: () -> Unit, first: Boolean = false): Button {
             val button = Button(this).apply {
                 text = label
-                textSize = 8f
+                textSize = 16f
+                if (android.os.Build.VERSION.SDK_INT >= 26) {
+                    setAutoSizeTextTypeUniformWithConfiguration(10, 16, 1, android.util.TypedValue.COMPLEX_UNIT_SP)
+                }
                 isAllCaps = false
                 minHeight = 0
                 minimumHeight = 0
@@ -330,7 +334,10 @@ class MainActivity : Activity() {
             })
             return button
         }
-        researchButton.textSize = 8f
+        researchButton.textSize = 16f
+        if (android.os.Build.VERSION.SDK_INT >= 26) {
+            researchButton.setAutoSizeTextTypeUniformWithConfiguration(10, 16, 1, android.util.TypedValue.COMPLEX_UNIT_SP)
+        }
         researchButton.minimumHeight = 0
         researchButton.minHeight = 0
         researchButton.text = "Research"
@@ -438,9 +445,9 @@ class MainActivity : Activity() {
             val count = allAddresses.size
             val countryCode = countryCodes[country].orEmpty()
             // Keep the complete country heading on one horizontal line; the card dimensions stay unchanged.
-            val waiting = if (count == 0) " • در انتظار" else ""
-            val threshold = if (count >= 100) " • ✓۱۰۰+" else if (count > 0) " • ${100 - count} تا ۱۰۰" else ""
-            cards.add(resolverListCard("$country [$countryCode] • $count DNS$threshold$waiting", curated + onlineResolvers,
+            val waiting = if (count == 0) "  ┆  در انتظار" else ""
+            val threshold = if (count >= 100) "  ┆  ✓۱۰۰+" else if (count > 0) "  ┆  ${100 - count} تا ۱۰۰" else ""
+            cards.add(resolverListCard("$country [$countryCode]  ┆  $count DNS$threshold$waiting", curated + onlineResolvers,
                 countryWindowHeight(), dividerBeforeIndex = curated.size.takeIf { onlineResolvers.isNotEmpty() }))
         }
         if (importedResolvers.isNotEmpty()) cards.add(resolverListCard("فهرست DNSهای واردشده", importedResolvers, countryWindowHeight()))
@@ -904,16 +911,19 @@ class MainActivity : Activity() {
                         setPadding(dp(2), dp(2), dp(2), dp(2))
                         setBackgroundColor(seriesColorForResolver(resolver))
                     }
-                    item.addView(TextView(this@MainActivity).apply {
-                        text = resolver.name
-                        textSize = 8f
-                        gravity = Gravity.CENTER
-                        maxLines = 2
-                        setTypeface(null, 1)
-                        setTextColor(0xFF1C2B40.toInt())
-                    })
-                    item.addView(dnsAddressButton("DNS اول: ${resolver.first}", resolver.first))
-                    if (resolver.second.isNotBlank()) item.addView(dnsAddressButton("DNS دوم: ${resolver.second}", resolver.second))
+                    val discoveredEntry = resolver.name.startsWith("DNS کشف", ignoreCase = true)
+                    if (!discoveredEntry) {
+                        item.addView(TextView(this@MainActivity).apply {
+                            text = resolver.name
+                            textSize = 8f
+                            gravity = Gravity.CENTER
+                            maxLines = 2
+                            setTypeface(null, 1)
+                            setTextColor(0xFF1C2B40.toInt())
+                        })
+                    }
+                    item.addView(dnsAddressButton(if (discoveredEntry) resolver.first else "DNS اول: ${resolver.first}", resolver.first))
+                    if (resolver.second.isNotBlank()) item.addView(dnsAddressButton(if (discoveredEntry) resolver.second else "DNS دوم: ${resolver.second}", resolver.second))
                     if (resolver.note.isNotBlank()) item.addView(TextView(this@MainActivity).apply {
                         text = resolver.note
                         textSize = 7f
@@ -1052,13 +1062,13 @@ class MainActivity : Activity() {
             val shown = android.text.SpannableString(label)
             val addressStart = label.indexOf(address)
             if (addressStart >= 0 && address.isNotEmpty()) {
-                shown.setSpan(android.text.style.RelativeSizeSpan(1.55f), addressStart, addressStart + address.length,
+                shown.setSpan(android.text.style.RelativeSizeSpan(1.85f), addressStart, addressStart + address.length,
                     android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
                 shown.setSpan(android.text.style.StyleSpan(android.graphics.Typeface.BOLD), addressStart, addressStart + address.length,
                     android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             }
             text = shown
-            textSize = 9f
+            textSize = 10f
             gravity = Gravity.CENTER
             maxLines = 2
             setTextColor(0xFF176B87.toInt())
