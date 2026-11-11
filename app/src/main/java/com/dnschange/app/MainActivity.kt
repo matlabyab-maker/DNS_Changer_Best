@@ -237,12 +237,12 @@ class MainActivity : Activity() {
             text = "OFF  |  روشن کردن DNS"
             textSize = 15f
             isAllCaps = false
-            minHeight = dp(48)
-            minimumHeight = dp(48)
+            minHeight = dp(60)
+            minimumHeight = dp(60)
             setOnClickListener { toggleDns() }
         }
         updateToggleAppearance()
-        activationRow.addView(toggleButton, LinearLayout.LayoutParams(0, dp(48), 3.0f).apply { marginEnd = dp(3) })
+        activationRow.addView(toggleButton, LinearLayout.LayoutParams(0, dp(60), 3.0f).apply { marginEnd = dp(3) })
         val statusAndGuide = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
@@ -260,7 +260,7 @@ class MainActivity : Activity() {
                 setStroke(dp(1), 0xFFB8C5D5.toInt())
             }
         }
-        statusAndGuide.addView(status, LinearLayout.LayoutParams(-1, dp(22)))
+        statusAndGuide.addView(status, LinearLayout.LayoutParams(-1, dp(27)))
         statusAndGuide.addView(TextView(this).apply {
             text = "On : Yellow\nOff : Blue"
             textSize = 8f
@@ -268,8 +268,8 @@ class MainActivity : Activity() {
             setTextColor(0xFF42536A.toInt())
             setLineSpacing(0f, 0.9f)
             maxLines = 2
-        }, LinearLayout.LayoutParams(-1, dp(25)))
-        activationRow.addView(statusAndGuide, LinearLayout.LayoutParams(0, dp(48), 1.15f).apply { marginEnd = dp(2) })
+        }, LinearLayout.LayoutParams(-1, dp(30)))
+        activationRow.addView(statusAndGuide, LinearLayout.LayoutParams(0, dp(60), 1.15f).apply { marginEnd = dp(2) })
 
         // Optional IPv6 checkbox shares the main activation row to save vertical space.
         ipv6Toggle = CheckBox(this).apply {
@@ -292,20 +292,21 @@ class MainActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        ipv6AndPowers.addView(ipv6Toggle, LinearLayout.LayoutParams(0, dp(48), 1.35f))
+        ipv6AndPowers.addView(ipv6Toggle, LinearLayout.LayoutParams(0, dp(60), 1.35f))
         val powersButton = Button(this).apply {
             text = "Powers"
             textSize = 15f
             isAllCaps = false
             minWidth = 0
             minimumWidth = 0
-            minHeight = dp(46)
+            minHeight = dp(60)
+            minimumHeight = dp(60)
             setPadding(dp(5), 0, dp(5), 0)
             setOnClickListener { showCountryPowersDialog() }
         }
-        ipv6AndPowers.addView(powersButton, LinearLayout.LayoutParams(0, dp(48), 1.0f).apply { marginStart = dp(2) })
-        activationRow.addView(ipv6AndPowers, LinearLayout.LayoutParams(0, dp(48), 1.75f))
-        dnsCard.addView(activationRow, LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(2) })
+        ipv6AndPowers.addView(powersButton, LinearLayout.LayoutParams(0, dp(60), 1.0f).apply { marginStart = dp(2) })
+        activationRow.addView(ipv6AndPowers, LinearLayout.LayoutParams(0, dp(60), 1.75f))
+        dnsCard.addView(activationRow, LinearLayout.LayoutParams(-1, dp(60)).apply { topMargin = dp(2) })
 
         dns1.setOnClickListener { selectTarget(1) }
         dns2.setOnClickListener { selectTarget(2) }
@@ -366,7 +367,7 @@ class MainActivity : Activity() {
         researchButton.text = "Research"
         actionRow.addView(researchButton, LinearLayout.LayoutParams(0, dp(48), 1.05f).apply { marginEnd = dp(1) })
         compactAction("⌕ جستجو", 0.82f, { globalSearchDialog() })
-        compactAction("ⓘ Info", 0.58f, { showHowToWorkDialog() })
+        compactAction("راهنما و Info", 0.72f, { showHowToWorkDialog() })
         compactAction("ورود متن", 0.72f, { importDnsListDialog() })
         compactAction("ورود TXT", 0.66f, { openTxtImport() })
         page.addView(actionRow, LinearLayout.LayoutParams(-1, dp(48)).apply { bottomMargin = dp(2) })
@@ -385,7 +386,7 @@ class MainActivity : Activity() {
         tabContent = FrameLayout(this)
         page.addView(tabContent, LinearLayout.LayoutParams(-1, 0, 1f))
 
-        val labels = listOf("کشورها", "DNS عمومی", "IPv6", "ذخیره‌شده", "راهنما")
+        val labels = listOf("کشورها", "DNS عمومی", "IPv6", "ذخیره‌شده")
         labels.forEachIndexed { index, label ->
             val button = TextView(this).apply {
                 text = label
@@ -882,62 +883,123 @@ class MainActivity : Activity() {
             toast("آزمایش Ping هنوز در حال انجام است؛ کمی صبر کنید.")
             return
         }
-        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(12), dp(8), dp(12), dp(8)) }
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+        }
         val statusView = TextView(this).apply {
-            text = if (countryPowerLoading) "در حال سنجش Ping سرورها…" else "رتبه‌بندی بر اساس کمترین زمان پاسخ DNS؛ عدد کمتر قوی‌تر است. لمس: انتخاب DNS؛ نگه‌داشتن: کپی."
+            text = "رتبه‌بندی بر اساس زمان پاسخ DNS؛ لمس برای انتخاب و نگه‌داشتن برای کپی."
             textSize = 12f
             setTextColor(0xFF42536A.toInt())
+        }
+        val sortRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        var sortMode = 0
+        val sortButton = Button(this).apply {
+            text = "↕ Sort: Ping کمتر"
+            isAllCaps = false
+            textSize = 12f
+            minHeight = dp(42)
         }
         val results = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val scroll = ScrollView(this).apply { addView(results) }
         box.addView(statusView, LinearLayout.LayoutParams(-1, -2))
+        sortRow.addView(sortButton, LinearLayout.LayoutParams(-1, dp(46)))
+        box.addView(sortRow, LinearLayout.LayoutParams(-1, dp(48)))
         box.addView(scroll, LinearLayout.LayoutParams(-1, dp(420)))
-        val dialog = android.app.AlertDialog.Builder(this).setTitle("Powers | قوی‌ترین DNSها")
-            .setView(box).setPositiveButton("بستن", null).create()
+        val dialog = android.app.AlertDialog.Builder(this)
+            .setTitle("Powers | قوی‌ترین DNSها")
+            .setView(box)
+            .setPositiveButton("بستن", null)
+            .create()
+
+        val sortOptions = listOf(
+            "Ping کمتر (قوی‌تر)",
+            "Ping بیشتر",
+            "ترتیب کشور",
+            "ترتیب عددی IP",
+            "نام کشور"
+        )
+
+        fun snapshotRanked(): MutableList<Triple<String, String, Long>> {
+            val snapshot = synchronized(dnsPingLatencyMs) { dnsPingLatencyMs.toMap() }
+            val ranked = mutableListOf<Triple<String, String, Long>>()
+            countries.forEach { (country, seeds) ->
+                val addresses = (seeds.flatMap { listOf(it.first, it.second) } +
+                    discoveredCountryDns[country].orEmpty()).distinct()
+                addresses.forEach { ip -> snapshot[ip]?.let { ranked.add(Triple(country, ip, it)) } }
+            }
+            return ranked
+        }
 
         fun renderRanking() {
             results.removeAllViews()
-            val ranked = mutableListOf<Triple<String, String, Long>>()
-            countries.forEach { (country, seeds) ->
-                val addresses = (seeds.flatMap { listOf(it.first, it.second) } + discoveredCountryDns[country].orEmpty()).distinct()
-                addresses.forEach { ip -> dnsPingLatencyMs[ip]?.let { ranked.add(Triple(country, ip, it)) } }
+            val ranked = snapshotRanked()
+            val sorted = when (sortMode) {
+                1 -> ranked.sortedByDescending { it.third }
+                2 -> ranked.sortedWith(compareBy<Triple<String, String, Long>>({ it.first }, { it.third }))
+                3 -> ranked.sortedWith(compareBy<Triple<String, String, Long>>(
+                    { firstIpv4OctetDigits(it.second) },
+                    { firstIpv4OctetValue(it.second) },
+                    { it.second }
+                ))
+                4 -> ranked.sortedWith(compareBy<Triple<String, String, Long>>({ it.first }, { it.second }))
+                else -> ranked.sortedBy { it.third }
             }
-            ranked.sortBy { it.third }
             countryBestDns.clear()
             countries.keys.forEach { country ->
-                ranked.firstOrNull { it.first == country }?.let { countryBestDns[country] = it.second }
+                sorted.filter { it.first == country }.minByOrNull { it.third }
+                    ?.let { countryBestDns[country] = it.second }
             }
-            if (ranked.isEmpty()) {
-                results.addView(TextView(this).apply { text = "هنوز DNS پاسخ‌گوی قابل‌اندازه‌گیری پیدا نشده است."; textSize = 12f })
+            if (sorted.isEmpty()) {
+                results.addView(TextView(this).apply {
+                    text = "هنوز DNS پاسخ‌گوی قابل‌اندازه‌گیری پیدا نشده است."
+                    textSize = 12f
+                })
             } else {
-                ranked.forEachIndexed { index, row ->
-                    results.addView(dnsAddressButton(
+                sorted.forEachIndexed { index, row ->
+                    val entry = dnsAddressButton(
                         "${index + 1}.  ${row.first}  •  ${row.second}  •  ${row.third} ms" +
                             if (countryBestDns[row.first] == row.second) "  ⭐⭐⭐" else "",
                         row.second
-                    ), LinearLayout.LayoutParams(-1, dp(42)))
-                    if (index < ranked.lastIndex) results.addView(DashedDividerView(this@MainActivity), LinearLayout.LayoutParams(-1, dp(1)))
+                    )
+                    entry.setOnLongClickListener {
+                        val clipboard = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("DNS", row.second))
+                        toast("آدرس DNS کپی شد.")
+                        true
+                    }
+                    results.addView(entry, LinearLayout.LayoutParams(-1, dp(44)))
+                    if (index < sorted.lastIndex) results.addView(
+                        DashedDividerView(this@MainActivity),
+                        LinearLayout.LayoutParams(-1, dp(1))
+                    )
                 }
             }
-            statusView.text = "${ranked.size} DNS پاسخ‌گو؛ مرتب‌شده از Ping کمتر به بیشتر. نتیجه به شبکه فعلی شما وابسته است."
+            statusView.text = "${sorted.size} DNS پاسخ‌گو؛ مرتب‌سازی: ${sortOptions[sortMode]}."
             if (::countryGridContainer.isInitialized) renderCountryGrid()
         }
 
+        sortButton.setOnClickListener { anchor ->
+            android.widget.PopupMenu(this, anchor).apply {
+                sortOptions.forEachIndexed { index, label -> menu.add(0, index, index, label) }
+                setOnMenuItemClickListener { item ->
+                    sortMode = item.itemId.coerceIn(sortOptions.indices)
+                    sortButton.text = "↕ Sort: ${sortOptions[sortMode]}"
+                    renderRanking()
+                    true
+                }
+                show()
+            }
+        }
+
         dialog.setOnShowListener {
-            // Probe a small representative batch per country per tap. Testing thousands
-            // of endpoints at once can exhaust sockets, threads, and memory on phones.
             val candidates = countries.mapValues { (country, seeds) ->
-                (seeds.flatMap { listOf(it.first, it.second) } + discoveredCountryDns[country].orEmpty()).distinct()
+                (seeds.flatMap { listOf(it.first, it.second) } +
+                    discoveredCountryDns[country].orEmpty()).distinct()
             }
-            val totalCandidates = candidates.values.sumOf { it.size }
-            if (totalCandidates == 0) {
-                statusView.text = "ابتدا Research را اجرا کنید تا DNSهای کشورها دریافت شوند."
-                return@setOnShowListener
-            }
-            // Test at most 30 new addresses per country per tap. Repeated taps
-            // continue with the next untested batch instead of re-testing the same IPs.
             val untested = candidates.flatMap { (country, ips) ->
-                ips.filterNot { dnsPingLatencyMs.containsKey(it) }.take(30).map { ip -> country to ip }
+                ips.filterNot { ip -> synchronized(dnsPingLatencyMs) { dnsPingLatencyMs.containsKey(ip) } }
+                    .take(30).map { ip -> country to ip }
             }
             if (untested.isEmpty()) {
                 renderRanking()
@@ -949,21 +1011,23 @@ class MainActivity : Activity() {
                 val pool = Executors.newFixedThreadPool(8)
                 try {
                     val tasks = untested.map { (country, ip) -> Callable {
-                        val ping = dnsPingMillis(ip)
-                        Triple(country, ip, ping)
+                        Triple(country, ip, dnsPingMillis(ip))
                     } }
                     pool.invokeAll(tasks, 45, TimeUnit.SECONDS).forEach { future ->
                         try {
                             val (_, ip, ping) = future.get()
-                            if (ping != null) synchronized(dnsPingLatencyMs) { dnsPingLatencyMs[ip] = ping }
+                            if (ping != null) synchronized(dnsPingLatencyMs) {
+                                dnsPingLatencyMs[ip] = ping
+                            }
                         } catch (_: Exception) { }
                     }
                 } catch (_: Exception) {
-                    // A partial ranking is still useful if the network or probe pool is interrupted.
-                } finally { pool.shutdownNow() }
+                } finally {
+                    pool.shutdownNow()
+                }
                 runOnUiThread {
                     countryPowerLoading = false
-                    renderRanking()
+                    if (!isFinishing && !isDestroyed && dialog.isShowing) renderRanking()
                 }
             }.apply { name = "DNS-Changer-Powers-Probe"; isDaemon = true; start() }
         }
@@ -1114,7 +1178,7 @@ class MainActivity : Activity() {
                         })
                     }
                     fun addressLabel(prefix: String, address: String): String {
-                        val onlineMark = if (discoveredEntry || dnsPingLatencyMs.containsKey(address)) "🟢 " else ""
+                        val onlineMark = if (discoveredEntry || synchronized(dnsPingLatencyMs) { dnsPingLatencyMs.containsKey(address) }) "🟢 " else ""
                         val bestMark = if (countryKey != null && countryBestDns[countryKey] == address) "  ⭐⭐⭐" else ""
                         return "$onlineMark$prefix$address$bestMark"
                     }
@@ -1123,7 +1187,7 @@ class MainActivity : Activity() {
                             orientation = LinearLayout.HORIZONTAL
                             gravity = Gravity.CENTER_VERTICAL
                         }
-                        val online = responsiveIpv4.contains(address) || responsiveIpv6.contains(address) || dnsPingLatencyMs.containsKey(address)
+                        val online = responsiveIpv4.contains(address) || responsiveIpv6.contains(address) || synchronized(dnsPingLatencyMs) { dnsPingLatencyMs.containsKey(address) }
                         line.addView(TextView(this@MainActivity).apply {
                             text = if (online) "●" else "○"
                             textSize = 11f
@@ -1195,10 +1259,10 @@ class MainActivity : Activity() {
                                     )).map { it.value }
                                 }
                                 5 -> indexed.sortedWith(compareBy<IndexedValue<Resolver>>(
-                                    { dnsPingLatencyMs[it.value.first] ?: Long.MAX_VALUE }, { it.value.first }
+                                    { synchronized(dnsPingLatencyMs) { dnsPingLatencyMs[it.value.first] } ?: Long.MAX_VALUE }, { it.value.first }
                                 )).map { it.value }
                                 6 -> indexed.sortedWith(compareByDescending<IndexedValue<Resolver>>(
-                                    { dnsPingLatencyMs[it.value.first] ?: Long.MIN_VALUE }
+                                    { synchronized(dnsPingLatencyMs) { dnsPingLatencyMs[it.value.first] } ?: Long.MIN_VALUE }
                                 )).map { it.value }
                                 7 -> indexed.sortedWith(compareBy<IndexedValue<Resolver>>(
                                     { Regex("کشور\\s*:\\s*([^|]+)").find(it.value.note)?.groupValues?.getOrNull(1)?.trim()?.lowercase().orEmpty() },
@@ -1696,7 +1760,7 @@ class MainActivity : Activity() {
     private var pendingTxtExport: String? = null
 
     private fun showHowToWorkDialog() {
-        val guide = """راهنمای کار با DNStow  |  How To Work
+        val guide = """DNS_Changer_Best  |  راهنمای کار و اطلاعات برنامه
 
 ۱) انتخاب DNS
 در بالای صفحه دو کادر DNS 1 و DNS 2 قرار دارد. روی هر کادر بزنید تا مقصد انتخاب مشخص شود. سپس در هر فهرست، آدرس DNS دلخواه را لمس کنید تا در کادر انتخاب‌شده قرار بگیرد. می‌توانید آدرس‌ها را دستی نیز وارد یا ویرایش کنید.
@@ -1740,7 +1804,7 @@ class MainActivity : Activity() {
             addView(textView)
         }
         android.app.AlertDialog.Builder(this)
-            .setTitle("ⓘ راهنمای برنامه | How To Work")
+            .setTitle("DNS_Changer_Best | راهنما و Info")
             .setView(scroll)
             .setPositiveButton("متوجه شدم", null)
             .show()
